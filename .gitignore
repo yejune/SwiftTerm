@@ -11,3 +11,135 @@ DerivedData
 .DS_Store
 *~
 esctest/
+
+.vercel/
+*.egg-info/
+# Claude Code Configuration
+*_secret=*
+.TemporaryItems
+*.p12
+*.egg
+# Secrets and Credentials (CRITICAL)
+dist/
+*.backup/
+ehthumbs.db
+.claude/settings.local.json
+.claude/skills/*/secrets/
+*.db
+out/
+.uv-cache/
+*.rdb
+.aws/credentials
+# Deployment & CI/CD
+# Skill-specific credentials
+[Dd]esktop.ini
+.coverage
+private-key*
+.claude/skills/*/*/*key*
+# IDE & Editors
+*.tmp
+*-api-key.*
+# Logs & Temporary Files
+.env/
+.Trashes
+*.backup
+# Updated: 2026-01-10
+.vscode/
+# Build Artifacts & Distribution
+*.log
+*.temp
+.claude/skills/*/.env*
+# Node.js (for docs/Nextra)
+# Python Cache & Bytecode
+env/
+secret-key-*
+.DocumentRevisions-V100
+*-backup/
+.ruff_cache/
+.directory
+.fseventsd
+*.secret.*
+.tscache/
+*_backup_*/
+# Mac
+# ============================================
+coverage.json
+.AppleDouble
+*.dbm
+# Version: 0.33.0
+htmlcov/
+*_key.*
+# Test Coverage
+# Certificate files
+*.suo
+*-secret-key.*
+# MoAI-ADK Package Distribution .gitignore
+.Spotlight-V100
+*-secret.*
+*.sqlite3
+.cursor/
+.claude/settings.local.*.json
+.moai-backups/
+.#*
+*.pyd
+*.sqlite
+*_token=*
+.env
+*.njsproj
+__pycache__/
+*.pyo
+*.key.*
+*_secret.*
+# OS Files
+*.sublime-workspace
+# Backups
+logs/
+.aws/config
+# Virtual Environments
+*.pem
+.claude/skills/*/*/*token*
+.turbo/
+.pytest_cache/
+# Windows
+# ===========================================
+*.tsbuildinfo
+secret-*.*
+*.jks
+.claude/local/
+.claude/.env.local*
+.mypy_cache/
+*-key.*
+.env.*
+api-key-*
+.nuxt/
+# Environment files
+*.sln
+.claude/skills/*/*/*secret*
+*.sublime-project
+# Private keys (specific patterns to avoid false positives)
+*.pyc
+*.sw?
+.venv/
+Thumbs.db
+.firebase/
+build/
+*.bak
+# FIXED: Issue #237 - Replaced overly broad *key* and *secret* patterns
+# Linux
+*.swo
+.LSOverride
+.uv_cache/
+# Purpose: Essential patterns for user projects
+.netlify/
+!.env.example
+dist-ssr/
+.idea/
+# Cloud provider credentials
+node_modules/
+venv/
+.next/
+# Credential patterns in environment files
+*.swp
+.VolumeIcon.icns
+*.pfx
+# Build Tools & Frameworks

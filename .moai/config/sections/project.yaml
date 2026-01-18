@@ -1,0 +1,9 @@
+project:
+  name: SwiftTerm
+  description: ''
+  type: ''
+  locale: '{{LOCALE}}'
+  created_at: '2026-01-19T02:44:02.168388Z'
+  initialized: 'true'
+github:
+  profile_name: ''

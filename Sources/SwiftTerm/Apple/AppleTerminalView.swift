@@ -528,7 +528,21 @@ extension TerminalView {
         
         while col < cols {
             let ch: CharData = line[col]
-            let width = max(1, Int(ch.width))
+
+            // Skip placeholder cells for wide characters
+            if ch.width == 0 {
+                col += 1
+                continue
+            }
+
+            // 손상된 placeholder 감지: code=0이고 이전 셀이 실제 문자인 경우
+            // (행 끝의 빈 셀은 이전 셀도 code=0이므로 건너뛰지 않음)
+            if ch.code == 0 && col > 0 && line[col-1].code != 0 {
+                col += 1
+                continue
+            }
+
+            let width = Int(ch.width)
             let attr = ch.attribute
             let hasUrl = ch.hasPayload
             guard let attributes = getAttributes(attr, withUrl: hasUrl) else {

@@ -293,6 +293,10 @@ public final class Buffer {
         _lines.makeEmpty = { [unowned self] line in getBlankLine(attribute: CharData.defaultAttr, isWrapped: false) }
         setupLinesCallbacks()
         setupTabStops (tabStopWidth: tabStopWidth)
+
+        // Initialize lastBufferStorage with actual cols/rows
+        // y=-1 indicates no valid previous character yet
+        lastBufferStorage = (-1, -1, cols, rows)
     }
         
     public func getCorrectBufferLength (_ rows: Int) -> Int
@@ -1125,7 +1129,9 @@ public final class Buffer {
     // because combining unicode characters come after the character, so we need to poke back
     // at this location.   We track the buffer (so we can distinguish Alt/Normal), the buffer line
     // that we fetched, and the column.
-    var lastBufferStorage: (y: Int, x: Int, cols: Int, rows: Int) = (0, 0, 0, 0)
+    // y=-1 indicates no valid previous character position yet
+    // cols/rows are set during init to match actual buffer dimensions
+    var lastBufferStorage: (y: Int, x: Int, cols: Int, rows: Int) = (-1, -1, 0, 0)
     
     func insertCharacter(_ charData: CharData) {
         var chWidth = Int (charData.width)

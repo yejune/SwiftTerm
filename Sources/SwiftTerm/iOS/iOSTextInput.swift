@@ -220,6 +220,9 @@ extension TerminalView: UITextInput {
         }
 
         endTextInputEdit()
+
+        // Update IME composition preview
+        showIMEComposition(text: markedText)
     }
 
     func resetInputBuffer (_ loc: String = #function)
@@ -235,6 +238,9 @@ extension TerminalView: UITextInput {
     
     public func unmarkText() {
         uitiLog("unmarkText() \(textInputStateDescription())")
+
+        // Clear IME composition preview
+        showIMEComposition(text: nil)
         if let previouslyMarkedRange = _markedTextRange {
             // Ensure that multi-char input (Chinese-Japanese keyboards) works:
             if let previouslyMarkedText = text(in: previouslyMarkedRange) {

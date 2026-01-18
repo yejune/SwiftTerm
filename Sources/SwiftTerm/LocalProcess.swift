@@ -109,8 +109,9 @@ public class LocalProcess {
     }
     
     /**
-     * Sends the array slice to the local process using DispatchIO
+     * Sends the array slice to the local process using synchronous write
      * - Parameter data: The range of bytes to send to the child process
+     * - Note: Uses synchronous write to guarantee order for fast input (especially Korean IME)
      */
     public func send (data: ArraySlice<UInt8>)
     {
@@ -119,24 +120,29 @@ public class LocalProcess {
         }
         let copy = sendCount
         sendCount += 1
+
         data.withUnsafeBytes { ptr in
-            let ddata = DispatchData(bytes: ptr)
-            let copyCount = ddata.count
+            let count = data.count
             if debugIO {
-                print ("[SEND-\(copy)] Queuing data to client: \(data) ")
+                print ("[SEND-\(copy)] Writing data to client: \(data)")
             }
 
-            DispatchIO.write(toFileDescriptor: childfd, data: ddata, runningHandlerOn: DispatchQueue.global(qos: .userInitiated), handler:  { dd, errno in
-                self.total += copyCount
-                if self.debugIO {
-                    print ("[SEND-\(copy)] completed bytes=\(self.total)")
+            var written = 0
+            while written < count {
+                let result = Darwin.write(childfd, ptr.baseAddress!.advanced(by: written), count - written)
+                if result < 0 {
+                    if errno == EINTR { continue }
+                    print("Error writing data to the child, errno=\(errno)")
+                    break
                 }
-                if errno != 0 {
-                    print ("Error writing data to the child, errno=\(errno)")
-                }
-            })
-        }
+                written += result
+            }
 
+            total += written
+            if debugIO {
+                print("[SEND-\(copy)] completed bytes=\(total)")
+            }
+        }
     }
     
     /* Used to generate the next file name counter */

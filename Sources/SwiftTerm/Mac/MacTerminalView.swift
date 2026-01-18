@@ -180,7 +180,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     }
     
     var becomeMainObserver, resignMainObserver: NSObjectProtocol?
-    
+    var becomeKeyObserver, resignKeyObserver: NSObjectProtocol?
+
     deinit {
         if let becomeMainObserver {
             NotificationCenter.default.removeObserver (becomeMainObserver)
@@ -188,8 +189,14 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         if let resignMainObserver {
             NotificationCenter.default.removeObserver (resignMainObserver)
         }
+        if let becomeKeyObserver {
+            NotificationCenter.default.removeObserver(becomeKeyObserver)
+        }
+        if let resignKeyObserver {
+            NotificationCenter.default.removeObserver(resignKeyObserver)
+        }
     }
-    
+
     func setupFocusNotification() {
         becomeMainObserver = NotificationCenter.default.addObserver(forName: .init("NSWindowDidBecomeMainNotification"), object: nil, queue: nil) { [unowned self] notification in
             self.caretView.updateCursorStyle()
@@ -197,6 +204,20 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         resignMainObserver = NotificationCenter.default.addObserver(forName: .init("NSWindowDidResignMainNotification"), object: nil, queue: nil) { [unowned self] notification in
             self.caretView.disableAnimations()
             self.caretView.updateView()
+        }
+
+        // Window Key 알림 옵저버 - IME 상태 관리
+        becomeKeyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: nil) { [weak self] notification in
+            guard let self = self,
+                  notification.object as? NSWindow === self.window else { return }
+            NSLog("[SwiftTerm] windowDidBecomeKey: activating inputContext")
+            self.inputContext?.activate()
+        }
+
+        resignKeyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: nil) { [weak self] notification in
+            guard let self = self,
+                  notification.object as? NSWindow === self.window else { return }
+            NSLog("[SwiftTerm] windowDidResignKey: resetting IME state")
         }
     }
     
@@ -208,7 +229,27 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
 
     /// This controls whether the backspace should send ^? or ^H, the default is ^?
     public var backspaceSendsControlH: Bool = false
-    
+
+    /**
+     * If set to true, shows the IME composition process in real-time.
+     * For Korean input, this displays the character building process (ㅎ → 하 → 한)
+     * as an overlay at the cursor position.
+     */
+    public var showsIMECompositionPreview: Bool = false {
+        didSet { updateIMECompositionView() }
+    }
+
+    /// The view that displays IME composition text
+    var imeCompositionView: MacIMECompositionView?
+
+    /// Storage for IME marked text during composition
+    var markedTextStorage: String?
+
+    /// Tracks cursor position at last insert for IME overlay positioning
+    /// This compensates for the delay between sending text and receiving echo
+    var imeLastBufferX: Int = -1
+    var imeLastInsertWidth: Int = 0
+
     var _nativeFg, _nativeBg: TTColor!
     var settingFg = false, settingBg = false
     /**
@@ -459,15 +500,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
 
+    // Pre-activate IME when view is added to window
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            NSLog("[SwiftTerm] viewDidMoveToWindow: activating inputContext early")
+            inputContext?.activate()
+        } else {
+            NSLog("[SwiftTerm] viewDidMoveToWindow: window is nil, clearing state")
+            inputContext?.discardMarkedText()
+            markedTextStorage = nil
+        }
+    }
+
     //
     // NSTextInputClient protocol implementation
     //
     public override func becomeFirstResponder() -> Bool {
         let response = super.becomeFirstResponder()
+        NSLog("[SwiftTerm] becomeFirstResponder called, response: \(response)")
         if response {
             hasFocus = true
             caretView.updateCursorStyle()
             terminal.setTerminalFocus(true)
+
+            // Activate input context for proper IME support in SwiftUI
+            // This ensures Korean/CJK composition works from the first character
+            NSLog("[SwiftTerm] inputContext: \(String(describing: inputContext)), activating...")
+            inputContext?.activate()
+            NSLog("[SwiftTerm] inputContext activated")
         }
         return response
     }
@@ -478,6 +539,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             caretView.disableAnimations()
             hasFocus = false
             terminal.setTerminalFocus(false)
+
+            // IME 상태 완전 정리
+            inputContext?.discardMarkedText()
+            markedTextStorage = nil
+
+            NSLog("[SwiftTerm] resignFirstResponder: IME state cleared")
         }
         return response
     }
@@ -487,7 +554,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
             return true
         }
     }
-    
+
     // Tracking object, maintained by `startTracking` and `deregisterTrackingInterest`
     var tracking: NSTrackingArea? = nil
     
@@ -573,6 +640,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     // of those keys.
     //
     public override func keyDown(with event: NSEvent) {
+        NSLog("[SwiftTerm] keyDown: \(event.characters ?? "nil"), hasMarkedText: \(hasMarkedText())")
+        processKeyDown(with: event)
+    }
+
+    private func processKeyDown(with event: NSEvent) {
         selection.active = false
         let eventFlags = event.modifierFlags
         
@@ -669,7 +741,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         
         interpretKeyEvents([event])
     }
-    
+
     public override func doCommand(by selector: Selector) {
         switch selector {
         case #selector(insertNewline(_:)):
@@ -728,31 +800,71 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     // NSTextInputClient protocol implementation
     open func insertText(_ string: Any, replacementRange: NSRange) {
+        NSLog("[SwiftTerm] insertText called: \(string)")
         insertText(string, replacementRange: replacementRange, isPaste: false)
     }
     
     func insertText(_ string: Any, replacementRange: NSRange, isPaste: Bool) {
+        NSLog("[SwiftTerm] insertText called: \(string) on thread: \(Thread.isMainThread ? "main" : "background")")
+
+        // Clear marked text when text is inserted (composition finalized)
+        if markedTextStorage != nil {
+            markedTextStorage = nil
+            showIMEComposition(text: nil)
+        }
+
         if let str = string as? NSString {
+            let normalizedStr = (str as String).precomposedStringWithCanonicalMapping
+            NSLog("[SwiftTerm] Sending to terminal: '\(normalizedStr)'")
             if isPaste, terminal.bracketedPasteMode {
                 send(data: EscapeSequences.bracketedPasteStart[0...])
             }
-            send (txt: str as String)
+            send(txt: normalizedStr)
             if isPaste, terminal.bracketedPasteMode {
                 send(data: EscapeSequences.bracketedPasteEnd[0...])
             }
+
+            // Track cursor position for IME overlay positioning
+            imeLastBufferX = terminal.buffer.x
+            imeLastInsertWidth = IMEUtils.cellWidth(for: normalizedStr)
         }
-        // TODO: I do not think we actually need this needsDisplay, the data fed should bubble this up
-        // needsDisplay = true
     }
-    
+
     // NSTextInputClient protocol implementation
     open func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        // nothing
+        NSLog("[SwiftTerm] setMarkedText called: \(string)")
+        // Extract the text from the input (can be String or NSAttributedString)
+        var text: String?
+        if let attributedString = string as? NSAttributedString {
+            text = attributedString.string
+        } else if let plainString = string as? String {
+            text = plainString
+        } else {
+            text = nil
+        }
+
+        // Handle empty setMarkedText (clearing)
+        if text == nil || text!.isEmpty {
+            markedTextStorage = nil
+            showIMEComposition(text: nil)
+            return
+        }
+
+        markedTextStorage = text
+        showIMEComposition(text: text)
     }
-    
+
     // NSTextInputClient protocol implementation
     open func unmarkText() {
-        // nothing
+        // Insert the marked text into the terminal before clearing
+        if let markedText = markedTextStorage, !markedText.isEmpty {
+            insertText(markedText, replacementRange: NSRange())
+        }
+
+        markedTextStorage = nil
+
+        // Clear IME composition preview
+        showIMEComposition(text: nil)
     }
     
     // NSTextInputClient protocol implementation
@@ -777,17 +889,15 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     // NSTextInputClient protocol implementation
     open func markedRange() -> NSRange {
-        print ("markedRange: This should return the actual range from the selection")
-        
-        // This means "no marked" - when we fix, we should address
+        if let text = markedTextStorage, !text.isEmpty {
+            return NSRange(location: 0, length: text.count)
+        }
         return NSRange.empty
     }
-    
+
     // NSTextInputClient protocol implementation
     open func hasMarkedText() -> Bool {
-        // print ("hasMarkedText: This should return the actual range from the selection")
-        // TODO
-        return false
+        return markedTextStorage != nil && !markedTextStorage!.isEmpty
     }
     
     // NSTextInputClient protocol implementation
@@ -1331,6 +1441,82 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     public func iTermContent (source: Terminal, content: ArraySlice<UInt8>) {
         terminalDelegate?.iTermContent(source: self, content: content)
+    }
+
+    // MARK: - IME Composition Preview
+
+    /// Creates or removes the IME composition view based on the option setting
+    func updateIMECompositionView() {
+        if showsIMECompositionPreview {
+            if imeCompositionView == nil {
+                let view = MacIMECompositionView(frame: .zero)
+                view.font = fontSet.normal
+                view.updateColors(
+                    background: nativeBackgroundColor,
+                    foreground: nativeForegroundColor,
+                    border: .separatorColor
+                )
+                addSubview(view)
+                imeCompositionView = view
+            }
+        } else {
+            imeCompositionView?.removeFromSuperview()
+            imeCompositionView = nil
+        }
+    }
+
+    /// Updates the IME composition view position to match the cursor
+    func updateIMECompositionPosition() {
+        guard let view = imeCompositionView,
+              let text = view.text,
+              !text.isEmpty else { return }
+
+        // Use shared IME utility for frame calculation (macOS uses flipped Y)
+        let newFrame = IMEUtils.calculateOverlayFrame(
+            for: text,
+            cursorRow: terminal.buffer.y,
+            currentBufferX: terminal.buffer.x,
+            lastBufferX: imeLastBufferX,
+            lastInsertWidth: imeLastInsertWidth,
+            cellDimension: cellDimension,
+            frameHeight: frame.height,
+            flipY: true
+        )
+        view.frame = newFrame
+
+        // Update caret width to match composition character width
+        let cellCount = IMEUtils.cellWidth(for: text)
+        if let caret = caretView {
+            caret.frame.size.width = cellDimension.width * CGFloat(cellCount)
+        }
+
+        // Clear tracking after use
+        imeLastBufferX = -1
+        imeLastInsertWidth = 0
+    }
+
+    /// Shows or hides the IME composition text
+    func showIMEComposition(text: String?) {
+        guard showsIMECompositionPreview else { return }
+
+        // Ensure view exists on first use
+        if imeCompositionView == nil && text != nil {
+            updateIMECompositionView()
+        }
+
+        imeCompositionView?.text = text
+        if text != nil {
+            updateIMECompositionPosition()
+        } else {
+            // Reset tracking when composition ends
+            imeLastBufferX = -1
+            imeLastInsertWidth = 0
+
+            // Reset caret width to normal (1 cell)
+            if let caret = caretView {
+                caret.frame.size.width = cellDimension.width
+            }
+        }
     }
 }
 

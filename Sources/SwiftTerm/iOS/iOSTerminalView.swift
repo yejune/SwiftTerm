@@ -144,6 +144,23 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             caretView?.tracksFocus = newValue
         }
     }
+
+    /**
+     * If set to true, shows the IME composition process in real-time.
+     * For Korean input, this displays the character building process (ㅎ → 하 → 한)
+     * as an overlay at the cursor position.
+     */
+    public var showsIMECompositionPreview: Bool = false {
+        didSet { updateIMECompositionView() }
+    }
+
+    /// The view that displays IME composition text
+    var imeCompositionView: iOSIMECompositionView?
+
+    /// Tracks cursor position at last insert for IME overlay positioning
+    var imeLastBufferX: Int = -1
+    var imeLastInsertWidth: Int = 0
+
     var accessibility: AccessibilityService = AccessibilityService()
     var search: SearchService!
     var debug: UIView?
@@ -1154,9 +1171,15 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                 resetInputBuffer()
                 self.send(data: returnByteSequence [0...])
             } else {
-                self.send(txt: textToInsert)
+                // Normalize to NFC (precomposed) form for Korean/CJK characters
+                let normalizedText = textToInsert.precomposedStringWithCanonicalMapping
+                self.send(txt: normalizedText)
             }
         }
+
+        // Track cursor position for IME overlay positioning (echo delay compensation)
+        imeLastBufferX = terminal.buffer.x
+        imeLastInsertWidth = IMEUtils.cellWidth(for: textToInsert)
 
         queuePendingDisplay()
     }
@@ -1603,6 +1626,82 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
     public func iTermContent (source: Terminal, content: ArraySlice<UInt8>) {
         terminalDelegate?.iTermContent(source: self, content: content)
+    }
+
+    // MARK: - IME Composition Preview
+
+    /// Creates or removes the IME composition view based on the option setting
+    func updateIMECompositionView() {
+        if showsIMECompositionPreview {
+            if imeCompositionView == nil {
+                let view = iOSIMECompositionView(frame: .zero)
+                view.font = fontSet.normal
+                view.updateColors(
+                    background: nativeBackgroundColor,
+                    foreground: nativeForegroundColor,
+                    border: .separator
+                )
+                addSubview(view)
+                imeCompositionView = view
+            }
+        } else {
+            imeCompositionView?.removeFromSuperview()
+            imeCompositionView = nil
+        }
+    }
+
+    /// Updates the IME composition view position to match the cursor
+    func updateIMECompositionPosition() {
+        guard let view = imeCompositionView,
+              let text = view.text,
+              !text.isEmpty else { return }
+
+        // Use shared IME utility for frame calculation (iOS uses non-flipped Y)
+        let newFrame = IMEUtils.calculateOverlayFrame(
+            for: text,
+            cursorRow: terminal.buffer.y,
+            currentBufferX: terminal.buffer.x,
+            lastBufferX: imeLastBufferX,
+            lastInsertWidth: imeLastInsertWidth,
+            cellDimension: cellDimension,
+            frameHeight: frame.height,
+            flipY: false
+        )
+        view.frame = newFrame
+
+        // Update caret width to match composition character width
+        let cellCount = IMEUtils.cellWidth(for: text)
+        if let caret = caretView {
+            caret.frame.size.width = cellDimension.width * CGFloat(cellCount)
+        }
+
+        // Clear tracking after use
+        imeLastBufferX = -1
+        imeLastInsertWidth = 0
+    }
+
+    /// Shows or hides the IME composition text
+    func showIMEComposition(text: String?) {
+        guard showsIMECompositionPreview else { return }
+
+        // Ensure view exists on first use
+        if imeCompositionView == nil && text != nil {
+            updateIMECompositionView()
+        }
+
+        imeCompositionView?.text = text
+        if text != nil {
+            updateIMECompositionPosition()
+        } else {
+            // Reset tracking when composition ends
+            imeLastBufferX = -1
+            imeLastInsertWidth = 0
+
+            // Reset caret width to normal (1 cell)
+            if let caret = caretView {
+                caret.frame.size.width = cellDimension.width
+            }
+        }
     }
 }
 

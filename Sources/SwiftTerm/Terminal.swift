@@ -933,10 +933,22 @@ open class Terminal {
         var rest:ArraySlice<UInt8> = [][...]
         var idx = 0
         var count:Int = 0
-        
+        // Track how many parse cycles the putback has survived (for stale detection)
+        var putbackAge: Int = 0
+
         // Invoke this method at the beginning of parse
         mutating func prepare (_ data: ArraySlice<UInt8>)
         {
+            // Detect stale putback buffer (survived multiple parse cycles without completion)
+            if !putbackBuffer.isEmpty {
+                putbackAge += 1
+                // If putback survived more than 2 parse cycles, it's likely from an
+                // interrupted/malformed UTF-8 sequence - discard it
+                if putbackAge > 2 {
+                    putbackBuffer = []
+                    putbackAge = 0
+                }
+            }
             assert (rest.count == 0)
             rest = data
             count = putbackBuffer.count + data.count
@@ -973,6 +985,7 @@ open class Terminal {
                 newPutback.append (getNext ())
             }
             putbackBuffer = newPutback
+            putbackAge = 0  // Reset age when actively putting back (new incomplete UTF-8)
             rest = [][...]
         }
         
@@ -986,10 +999,25 @@ open class Terminal {
             rest = [][...]
         }
         
+        /// Soft reset - preserves putbackBuffer for incomplete UTF-8 sequences
+        /// This is called when parser state resets (e.g., on ESC sequences)
+        /// but we want to continue UTF-8 decoding when print mode resumes
         mutating func reset ()
         {
-            putbackBuffer = []
+            // Don't clear putbackBuffer - it may contain incomplete UTF-8 sequences
+            // that should be completed when more data arrives
             idx = 0
+            rest = [][...]
+        }
+
+        /// Full reset - clears all state including UTF-8 buffer
+        /// Use this for terminal hard reset scenarios
+        mutating func fullReset ()
+        {
+            putbackBuffer = []
+            putbackAge = 0
+            idx = 0
+            rest = [][...]
         }
     }
     
@@ -1099,16 +1127,21 @@ open class Terminal {
                 // 3. Zero Width Joiner (ZWJ) for emoji sequences (e.g., 👩 + ZWJ + 👩 + ZWJ + 👦 = 👩‍👩‍👦)
                 // 4. Variation selectors (e.g., U+FE0F for emoji presentation of ❤️)
                 // 5. Any character following a ZWJ (to complete the sequence)
+                // 6. Hangul Jamo vowels (U+1160-U+11A7) and final consonants (U+11A8-U+11FF)
+                //    for NFD Korean composition (e.g., ㅇ + ㅏ = 아)
+                let isHangulJamoVowelOrFinal = firstScalar.value >= 0x1160 && firstScalar.value <= 0x11FF
                 var shouldTryCombine = chWidth == 0 ||
                                        firstScalar.properties.canonicalCombiningClass != .notReordered ||
                                        firstScalar.properties.isEmojiModifier ||
                                        firstScalar.properties.isVariationSelector ||
-                                       firstScalar.value == 0x200D  // ZWJ
+                                       firstScalar.value == 0x200D ||  // ZWJ
+                                       isHangulJamoVowelOrFinal
 
                 // Also check if the previous character ends with ZWJ - if so, we should combine
                 if !shouldTryCombine {
                     let last = buffer.lastBufferStorage
-                    if last.cols == cols && last.rows == rows {
+                    // Check y >= 0 to ensure we have a valid previous character position
+                    if last.cols == cols && last.rows == rows && last.y >= 0 {
                         let existingLine = buffer.lines [last.y]
                         let lastx = last.x >= cols ? cols-1 : last.x
                         let lastChar = getCharacter (for: existingLine [lastx])
@@ -1121,7 +1154,8 @@ open class Terminal {
                 if shouldTryCombine {
                     // Determine if the last time we poked at a character is still valid
                     let last = buffer.lastBufferStorage
-                    if last.cols == cols && last.rows == rows {
+                    // Check y >= 0 to ensure we have a valid previous character position
+                    if last.cols == cols && last.rows == rows && last.y >= 0 {
                         // Fetch the old character, and attempt to combine it:
                         let existingLine = buffer.lines [last.y]
                         let lastx = last.x >= cols ? cols-1 : last.x

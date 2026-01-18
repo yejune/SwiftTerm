@@ -137,8 +137,9 @@ extension TerminalView {
     /// Returns true if this changed the number of columns/rows, false otherwise
     @discardableResult
     func processSizeChange (newSize: CGSize) -> Bool {
-        let newRows = Int (newSize.height / cellDimension.height)
-        let newCols = Int (getEffectiveWidth (size: newSize) / cellDimension.width)
+        // Ensure minimum terminal size to prevent layout issues during split view transitions
+        let newRows = max(2, Int (newSize.height / cellDimension.height))
+        let newCols = max(20, Int (getEffectiveWidth (size: newSize) / cellDimension.width))
         
         if newCols != terminal.cols || newRows != terminal.rows {
             selection.active = false

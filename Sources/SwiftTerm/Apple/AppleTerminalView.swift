@@ -516,6 +516,18 @@ extension TerminalView {
     //
     // Given a line of text with attributes, returns column-aware segments that can be drawn later.
     //
+    // 와이드 문자 여부 판별 (한글/CJK/이모지)
+    private func isWideCharacter(code: Int32) -> Bool {
+        let codeValue = UInt32(bitPattern: code)
+        return (codeValue >= 0x1100 && codeValue <= 0x11FF) ||   // Hangul Jamo
+               (codeValue >= 0x3000 && codeValue <= 0x9FFF) ||   // CJK
+               (codeValue >= 0xAC00 && codeValue <= 0xD7AF) ||   // Hangul Syllables
+               (codeValue >= 0xF900 && codeValue <= 0xFAFF) ||   // CJK Compatibility
+               (codeValue >= 0xFE30 && codeValue <= 0xFE4F) ||   // CJK Compatibility Forms
+               (codeValue >= 0x20000 && codeValue <= 0x2FFFF) || // CJK Extension B-F
+               (codeValue >= 0x1F300 && codeValue <= 0x1F9FF)    // Emoji
+    }
+
     func buildAttributedString (row: Int, line: BufferLine, cols: Int) -> ViewLineInfo
     {
         var segments: [ViewLineSegment] = []
@@ -525,52 +537,27 @@ extension TerminalView {
         var kittyPlaceholders: [KittyPlaceholderCell] = []
         var previousPlaceholder: KittyPlaceholderCell?
         var previousPlaceholderAttribute: Attribute?
-        
+        var skipNextCell = false
+
         while col < cols {
             let ch: CharData = line[col]
 
-            // Skip placeholder cells for wide characters (width=0)
+            // 이전 와이드 문자의 placeholder 건너뛰기
+            if skipNextCell {
+                skipNextCell = false
+                col += 1
+                continue
+            }
+
+            // 정상 placeholder (width=0) 건너뛰기
             if ch.width == 0 {
                 col += 1
                 continue
             }
 
-            // 실제 문자의 display width 계산
-            var displayWidth = Int(ch.width)
-
-            // 와이드 문자 감지: code가 한글/CJK/이모지 범위인 경우 width=2로 처리
-            if ch.code != 0 {
-                let codeValue = UInt32(ch.code)
-                let isWide = (codeValue >= 0x1100 && codeValue <= 0x11FF) ||   // Hangul Jamo
-                             (codeValue >= 0x3000 && codeValue <= 0x9FFF) ||   // CJK
-                             (codeValue >= 0xAC00 && codeValue <= 0xD7AF) ||   // Hangul Syllables
-                             (codeValue >= 0xF900 && codeValue <= 0xFAFF) ||   // CJK Compatibility
-                             (codeValue >= 0xFE30 && codeValue <= 0xFE4F) ||   // CJK Compatibility Forms
-                             (codeValue >= 0x20000 && codeValue <= 0x2FFFF) || // CJK Extension B-F
-                             (codeValue >= 0x1F300 && codeValue <= 0x1F9FF)    // Emoji
-                if isWide {
-                    displayWidth = 2
-                }
-            }
-
-            // 손상된 placeholder 감지 (code=0이고 이전 셀이 와이드 문자인 경우)
-            if ch.code == 0 && col > 0 {
-                let prevCode = UInt32(line[col-1].code)
-                let prevIsWide = (prevCode >= 0x1100 && prevCode <= 0x11FF) ||
-                                 (prevCode >= 0x3000 && prevCode <= 0x9FFF) ||
-                                 (prevCode >= 0xAC00 && prevCode <= 0xD7AF) ||
-                                 (prevCode >= 0xF900 && prevCode <= 0xFAFF) ||
-                                 (prevCode >= 0xFE30 && prevCode <= 0xFE4F) ||
-                                 (prevCode >= 0x20000 && prevCode <= 0x2FFFF) ||
-                                 (prevCode >= 0x1F300 && prevCode <= 0x1F9FF) ||
-                                 line[col-1].width == 2
-                if prevIsWide {
-                    col += 1
-                    continue
-                }
-            }
-
-            let width = displayWidth
+            // 와이드 문자 감지
+            let isWide = ch.width == 2 || (ch.code != 0 && isWideCharacter(code: ch.code))
+            let width = isWide ? 2 : 1
             let attr = ch.attribute
             let hasUrl = ch.hasPayload
             guard let attributes = getAttributes(attr, withUrl: hasUrl) else {
@@ -580,7 +567,8 @@ extension TerminalView {
                 builder = nil
                 previousPlaceholder = nil
                 previousPlaceholderAttribute = nil
-                col += width
+                if isWide { skipNextCell = true }
+                col += 1
                 continue
             }
             
@@ -612,8 +600,12 @@ extension TerminalView {
                 previousPlaceholder = nil
                 previousPlaceholderAttribute = nil
             }
-            
-            col += width
+
+            // 와이드 문자이면 다음 셀(placeholder) 건너뛰기
+            if isWide {
+                skipNextCell = true
+            }
+            col += 1
         }
         
         if let finished = builder?.buildIfNeeded() {

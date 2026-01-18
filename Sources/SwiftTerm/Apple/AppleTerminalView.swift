@@ -529,20 +529,48 @@ extension TerminalView {
         while col < cols {
             let ch: CharData = line[col]
 
-            // Skip placeholder cells for wide characters
+            // Skip placeholder cells for wide characters (width=0)
             if ch.width == 0 {
                 col += 1
                 continue
             }
 
-            // 손상된 placeholder 감지: code=0이고 이전 셀이 실제 문자인 경우
-            // (행 끝의 빈 셀은 이전 셀도 code=0이므로 건너뛰지 않음)
-            if ch.code == 0 && col > 0 && line[col-1].code != 0 {
-                col += 1
-                continue
+            // 실제 문자의 display width 계산
+            var displayWidth = Int(ch.width)
+
+            // 와이드 문자 감지: code가 한글/CJK/이모지 범위인 경우 width=2로 처리
+            if ch.code != 0 {
+                let codeValue = UInt32(ch.code)
+                let isWide = (codeValue >= 0x1100 && codeValue <= 0x11FF) ||   // Hangul Jamo
+                             (codeValue >= 0x3000 && codeValue <= 0x9FFF) ||   // CJK
+                             (codeValue >= 0xAC00 && codeValue <= 0xD7AF) ||   // Hangul Syllables
+                             (codeValue >= 0xF900 && codeValue <= 0xFAFF) ||   // CJK Compatibility
+                             (codeValue >= 0xFE30 && codeValue <= 0xFE4F) ||   // CJK Compatibility Forms
+                             (codeValue >= 0x20000 && codeValue <= 0x2FFFF) || // CJK Extension B-F
+                             (codeValue >= 0x1F300 && codeValue <= 0x1F9FF)    // Emoji
+                if isWide {
+                    displayWidth = 2
+                }
             }
 
-            let width = Int(ch.width)
+            // 손상된 placeholder 감지 (code=0이고 이전 셀이 와이드 문자인 경우)
+            if ch.code == 0 && col > 0 {
+                let prevCode = UInt32(line[col-1].code)
+                let prevIsWide = (prevCode >= 0x1100 && prevCode <= 0x11FF) ||
+                                 (prevCode >= 0x3000 && prevCode <= 0x9FFF) ||
+                                 (prevCode >= 0xAC00 && prevCode <= 0xD7AF) ||
+                                 (prevCode >= 0xF900 && prevCode <= 0xFAFF) ||
+                                 (prevCode >= 0xFE30 && prevCode <= 0xFE4F) ||
+                                 (prevCode >= 0x20000 && prevCode <= 0x2FFFF) ||
+                                 (prevCode >= 0x1F300 && prevCode <= 0x1F9FF) ||
+                                 line[col-1].width == 2
+                if prevIsWide {
+                    col += 1
+                    continue
+                }
+            }
+
+            let width = displayWidth
             let attr = ch.attribute
             let hasUrl = ch.hasPayload
             guard let attributes = getAttributes(attr, withUrl: hasUrl) else {

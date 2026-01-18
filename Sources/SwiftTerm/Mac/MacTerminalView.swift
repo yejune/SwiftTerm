@@ -480,12 +480,20 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     open override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         setupScroller()
+        guard cellDimension != nil else { return }
+        processSizeChange(newSize: newSize)
+        needsDisplay = true
+        updateCursorPosition()
     }
 
     public override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         updateScroller()
         selection.active = false
+        guard cellDimension != nil else { return }
+        processSizeChange(newSize: bounds.size)
+        needsDisplay = true
+        updateCursorPosition()
     }
     
     private var _hasFocus = false

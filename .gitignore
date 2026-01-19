@@ -11,3 +11,135 @@ DerivedData
 .DS_Store
 *~
 esctest/
+
+# Claude Code Configuration
+*.njsproj
+*.tsbuildinfo
+.claude/skills/*/*/*token*
+# Deployment & CI/CD
+.LSOverride
+*.pyc
+# Cloud provider credentials
+*.rdb
+__pycache__/
+coverage.json
+*-backup/
+.claude/skills/*/secrets/
+[Dd]esktop.ini
+*_key.*
+*_secret.*
+.directory
+# Windows
+.claude/settings.local.*.json
+# Virtual Environments
+node_modules/
+*.temp
+.fseventsd
+*.bak
+htmlcov/
+.netlify/
+# Mac
+.coverage
+# Purpose: Essential patterns for user projects
+.env.*
+.pytest_cache/
+# IDE & Editors
+# Version: 0.33.0
+.AppleDouble
+.venv/
+# Secrets and Credentials (CRITICAL)
+# Environment files
+*_secret=*
+.env
+.claude/local/
+.claude/skills/*/*/*key*
+.next/
+.VolumeIcon.icns
+*.sqlite3
+*.sw?
+.ruff_cache/
+*.pyo
+out/
+*.tmp
+env/
+.uv-cache/
+.nuxt/
+*.swp
+*.pyd
+api-key-*
+.turbo/
+.cursor/
+*.dbm
+# Python Cache & Bytecode
+venv/
+dist/
+*-key.*
+# Updated: 2026-01-10
+*.jks
+.moai-backups/
+.vscode/
+.tscache/
+# Linux
+*.suo
+*.egg
+*.pfx
+.Spotlight-V100
+*.p12
+# Build Artifacts & Distribution
+# Skill-specific credentials
+*.sublime-project
+*-secret-key.*
+*.log
+# Backups
+private-key*
+*.sublime-workspace
+.vercel/
+.aws/credentials
+# ===========================================
+.mypy_cache/
+# Node.js (for docs/Nextra)
+*.pem
+# Logs & Temporary Files
+# Certificate files
+# Build Tools & Frameworks
+# Private keys (specific patterns to avoid false positives)
+.aws/config
+.Trashes
+# FIXED: Issue #237 - Replaced overly broad *key* and *secret* patterns
+# Credential patterns in environment files
+# ============================================
+.#*
+!.env.example
+.firebase/
+*.backup/
+*_token=*
+*.db
+.uv_cache/
+secret-*.*
+.env/
+*_backup_*/
+*.secret.*
+*.backup
+.claude/skills/*/*/*secret*
+.idea/
+*.sln
+*-secret.*
+*.egg-info/
+.claude/.env.local*
+*-api-key.*
+dist-ssr/
+logs/
+*.sqlite
+*.swo
+*.key.*
+# Test Coverage
+.claude/skills/*/.env*
+# OS Files
+# MoAI-ADK Package Distribution .gitignore
+secret-key-*
+.TemporaryItems
+build/
+.DocumentRevisions-V100
+.claude/settings.local.json
+Thumbs.db
+ehthumbs.db

@@ -805,6 +805,13 @@ public final class Buffer {
                 }
             }
             savedY = max(savedY - countRemovedSoFar, 0)
+
+            // When lines are merged during reflow, update cursor position
+            // so the shell can properly track the cursor at the end of merged text
+            if y >= 0 && y < lines.count {
+                let currentLine = lines[yBase + y]
+                x = currentLine.getTrimmedLength()
+            }
         }
     }
 
@@ -992,6 +999,13 @@ public final class Buffer {
             }
 
             savedY = min(savedY + linesToAdd, yBase + newRows - 1)
+
+            // When lines are split during reflow, ensure cursor is at text end, not window edge
+            if y >= 0 && y < lines.count {
+                let currentLine = lines[yBase + y]
+                let trimmedLength = currentLine.getTrimmedLength()
+                x = min(x, trimmedLength)
+            }
         }
 
         rearrange(toInsert, countToInsert)

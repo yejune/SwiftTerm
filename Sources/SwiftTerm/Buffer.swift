@@ -665,10 +665,11 @@ public final class Buffer {
 
             // If these lines contain the cursor don't touch them, the program will handle fixing up wrapped
             // lines with the cursor
-            if bufferAbsoluteY >= y && bufferAbsoluteY < i {
-                y += wrappedLines.count - 1
-                continue
-            }
+            // DEBUG: Allow reflowing lines with cursor to fix shell prompt path issue
+            // if bufferAbsoluteY >= y && bufferAbsoluteY < i {
+            //     y += wrappedLines.count - 1
+            //     continue
+            // }
 
             // Copy buffer data to new locations
             var destLineIndex = 0
@@ -892,9 +893,10 @@ public final class Buffer {
             // wrapped lines with the cursor
             let absoluteY = yBase + self.y
 
-            if absoluteY >= y && absoluteY < y + wrappedLines.count {
-                continue
-            }
+            // DEBUG: Allow reflowing lines with cursor to fix shell prompt path issue
+            // if absoluteY >= y && absoluteY < y + wrappedLines.count {
+            //     continue
+            // }
 
             let lastLineLength = wrappedLines [wrappedLines.count - 1].getTrimmedLength()
             let destLineLengths = getNewLineLengths(wrappedLines: wrappedLines, oldCols: oldCols, newCols: newCols)
